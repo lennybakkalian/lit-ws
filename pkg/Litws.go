@@ -5,9 +5,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"nhooyr.io/websocket"
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -19,10 +21,25 @@ type LitwsOptions struct {
 
 type Litws struct {
 	Options *LitwsOptions
+
+	packetHandler map[uint64]*packetHandler
+	clients       []*Client
+	clientsMux    *sync.Mutex
 }
 
 func NewLitws(options *LitwsOptions) *Litws {
-	return &Litws{options}
+	return &Litws{
+		Options:       options,
+		packetHandler: map[uint64]*packetHandler{},
+		clients:       []*Client{},
+		clientsMux:    &sync.Mutex{},
+	}
+}
+
+func (lws *Litws) RegisterPacketHandlers(handlers map[uint64]*packetHandler) {
+	for id, handler := range handlers {
+		lws.packetHandler[id] = handler
+	}
 }
 
 func (lws *Litws) Serve() {
@@ -56,5 +73,22 @@ func (lws *Litws) Serve() {
 }
 
 func (lws *Litws) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Litws request received: %s", r.URL.Path)
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+	if err != nil {
+		log.Printf("Litws accept error: %v", err)
+		return
+	}
+	defer c.Close(websocket.StatusInternalError, "bruh. idk why this happened")
+
+	client := newClient(lws, c)
+	lws.clientsMux.Lock()
+	defer lws.clientsMux.Unlock()
+	lws.clients = append(lws.clients, client)
+
+	go client.readLoop()
+	go client.writeLoop()
+}
+
+func (lws *Litws) removeClient(c *Client) {
+
 }

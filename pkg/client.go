@@ -1,6 +1,7 @@
 package litws
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"log"
@@ -23,11 +24,11 @@ var upgrader = websocket.Upgrader{
 type Client struct {
 	lws  *Litws
 	conn *websocket.Conn
-	send chan []byte
+	send chan *Packet
 }
 
 func newClient(lws *Litws, conn *websocket.Conn) *Client {
-	return &Client{lws, conn, make(chan []byte, 10)}
+	return &Client{lws, conn, make(chan *Packet, 10)}
 }
 
 func (c *Client) readPump() {
@@ -60,7 +61,7 @@ func (c *Client) writePump() {
 	}()
 	for {
 		select {
-		case message, ok := <-c.send:
+		case packet, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
@@ -71,13 +72,16 @@ func (c *Client) writePump() {
 			if err != nil {
 				return
 			}
+
+			message, err := json.Marshal(packet)
+
 			w.Write(message)
 
-			n := len(c.send)
+			/*n := len(c.send)
 			for i := 0; i < n; i++ {
 				w.Write([]byte("\n"))
 				w.Write(<-c.send)
-			}
+			}*/
 
 			if err := w.Close(); err != nil {
 				return
@@ -101,7 +105,7 @@ func (lws *Litws) serveWs(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	client := &Client{lws: lws, conn: conn, send: make(chan []byte, 256)}
+	client := &Client{lws: lws, conn: conn, send: make(chan *Packet, 256)}
 	client.lws.register <- client
 
 	go client.writePump()

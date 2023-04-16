@@ -1,6 +1,8 @@
 package litws
 
-import "log"
+import (
+	"log"
+)
 
 type SynchronizedSubscription struct {
 	client  *Client
@@ -24,7 +26,9 @@ func (lws *Litws) NewSynchronizer() *Synchronizer {
 
 func (s *Synchronizer) init() {
 	s.lws.RegisterPacketHandlers(map[uint64]packetHandler{
-		C2SSyncMapSubscribe: s.handleSyncMapSubscribe,
+		C2SSyncMapSubscribe:   s.handleSyncMapSubscribe,
+		C2SSyncMapUnsubscribe: s.handleSyncMapUnsubscribe,
+		C2SSyncMapFetch:       s.handleSyncMapFetch,
 	})
 }
 
@@ -32,10 +36,13 @@ func (s *Synchronizer) RegisterSyncMap(key string, syncMap *SyncMap[uint64, any]
 	if s.syncMap[key] != nil {
 		panic("syncMap already registered: " + key)
 	}
+	if syncMap.SortFunc == nil {
+		panic("syncMap sortFunc must not be nil")
+	}
 	s.syncMap[key] = syncMap
 }
 
-func (s *Synchronizer) handleSyncMapSubscribe(p *Packet[any], c *Client) {
+func (s *Synchronizer) handleSyncMapSubscribe(p *Packet, c *Client) {
 	payload := p.Payload.(*PC2SSyncMapSubscribe)
 	syncMap, ok := s.syncMap[payload.Key]
 	if !ok {
@@ -43,6 +50,29 @@ func (s *Synchronizer) handleSyncMapSubscribe(p *Packet[any], c *Client) {
 		return
 	}
 	s.syncMapSubs = append(s.syncMapSubs, newSynchronizedSubscription(c, syncMap))
+}
+
+func (s *Synchronizer) handleSyncMapUnsubscribe(p *Packet, c *Client) {
+	payload := p.Payload.(*PC2SSyncMapUnsubscribe)
+	sm := s.syncMap[payload.Key]
+	for i, sub := range s.syncMapSubs {
+		if sub.client == c && sub.syncMap == sm {
+			sub.unsubscribe()
+			s.syncMapSubs = append(s.syncMapSubs[:i], s.syncMapSubs[i+1:]...)
+			break
+		}
+	}
+}
+
+func (s *Synchronizer) handleSyncMapFetch(p *Packet, c *Client) {
+	payload := p.Payload.(*PC2SSyncMapFetch)
+	sm := s.syncMap[payload.Key]
+	for _, sub := range s.syncMapSubs {
+		if sub.client == c && sub.syncMap == sm {
+			sub.onFetch(p)
+			break
+		}
+	}
 }
 
 // SynchronizedSubscription
@@ -59,18 +89,49 @@ func (ss *SynchronizedSubscription) unsubscribe() {
 	ss.syncMap.removeEventListener("update", ss.onUpdate)
 }
 
-func (ss *SynchronizedSubscription) onSet(key uint64, value any) {
+func (ss *SynchronizedSubscription) onSet(values map[uint64]*any) {
 
 }
 
-func (ss *SynchronizedSubscription) onDelete(key uint64, _ any) {
+func (ss *SynchronizedSubscription) onDelete(values map[uint64]*any) {
 
 }
 
-func (ss *SynchronizedSubscription) onUpdate(key uint64, value any) {
+func (ss *SynchronizedSubscription) onUpdate(values map[uint64]*any) {
 
 }
 
-func (ss *SynchronizedSubscription) onFetch(packet *Packet[PC2SSyncMapFetch]) {
+func (ss *SynchronizedSubscription) onFetch(packet *Packet) {
+	payload := packet.Payload.(*PC2SSyncMapFetch)
+	respond := PS2CSyncMapData{New: map[uint64]interface{}{}}
 
+	sorted := ss.syncMap.GetSortedList(payload.OrderBy, payload.OrderDesc)
+	fillList := false
+	for _, k := range sorted {
+		if !fillList && less(payload.StartAt, ss.syncMap.ValueByField(payload.OrderBy, k.Value)) {
+			fillList = true
+		}
+		if fillList {
+			respond.New[k.Id] = k.Value
+		}
+		if len(respond.New) >= payload.Count {
+			break
+		}
+	}
+
+	ss.client.send <- &Packet{Id: S2CSyncMapData, Payload: respond}
+}
+
+func less(a, b interface{}) bool {
+	switch a.(type) {
+	case uint64:
+		return a.(uint64) < b.(uint64)
+	case string:
+		return a.(string) < b.(string)
+	case float64:
+		return a.(float64) < b.(float64)
+	default:
+		panic("unknown type for less")
+	}
+	return false
 }

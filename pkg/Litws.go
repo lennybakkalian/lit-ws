@@ -42,7 +42,7 @@ func (lws *Litws) RegisterPacketHandlers(handlers map[uint64]packetHandler) {
 	}
 }
 
-func (lws *Litws) Send(packet Packet[any]) {
+func (lws *Litws) Send(packet Packet) {
 	// todo
 }
 

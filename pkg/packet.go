@@ -9,14 +9,16 @@ const (
 	C2SSyncMapSubscribe   = 0x0101 // subscribe to a sync map
 	C2SSyncMapUnsubscribe = 0x0102 // unsubscribes
 	C2SSyncMapFetch       = 0x0103 // fetches part of the sync map
+	S2CSyncMapData        = 0x0104 // sync map data (insert,update,delete)
 )
 
-type Packet[T any] struct {
-	Id         PacketId
-	TrackingId string // used for callbacks or subscriptions
-	Payload    T
+type Packet struct {
+	Id PacketId
+	// TrackingId is used for callbacks or subscriptions.
+	TrackingId string
+	Payload    interface{}
 }
-type packetHandler func(p *Packet[any], c *Client)
+type packetHandler func(p *Packet, c *Client)
 
 type PC2SSyncMapSubscribe struct {
 	Key string `json:"key"`
@@ -28,4 +30,16 @@ type PC2SSyncMapUnsubscribe struct {
 
 type PC2SSyncMapFetch struct {
 	Key string `json:"key"`
+
+	StartAt   interface{} `json:"startAt"` // fetches from this value. (inclusive)
+	OrderBy   string      `json:"orderBy"`
+	OrderDesc bool        `json:"orderDesc"`
+	Count     int         `json:"count"`
+}
+
+type PS2CSyncMapData struct {
+	// New can contain id:nil, id:new or id:updated values.
+	New    map[uint64]interface{} `json:"new"`
+	Delete []uint64               `json:"delete"`
+	Errors []string               `json:"errors"`
 }

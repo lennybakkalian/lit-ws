@@ -14,28 +14,36 @@ type LitwsOptions struct {
 }
 
 type Litws struct {
-	Options *LitwsOptions
+	Options      *LitwsOptions
+	Synchronizer *Synchronizer
 
-	packetHandler map[uint64]*packetHandler
+	packetHandler map[uint64]packetHandler
 	clients       map[*Client]bool
 	register      chan *Client
 	unregister    chan *Client
 }
 
 func NewLitws(options *LitwsOptions) *Litws {
-	return &Litws{
+	lws := &Litws{
 		Options:       options,
-		packetHandler: map[uint64]*packetHandler{},
+		packetHandler: map[uint64]packetHandler{},
 		clients:       make(map[*Client]bool),
 		register:      make(chan *Client),
 		unregister:    make(chan *Client),
 	}
+	lws.Synchronizer = lws.NewSynchronizer()
+	lws.Synchronizer.init()
+	return lws
 }
 
-func (lws *Litws) RegisterPacketHandlers(handlers map[uint64]*packetHandler) {
+func (lws *Litws) RegisterPacketHandlers(handlers map[uint64]packetHandler) {
 	for id, handler := range handlers {
 		lws.packetHandler[id] = handler
 	}
+}
+
+func (lws *Litws) Send(packet Packet[any]) {
+	// todo
 }
 
 func (lws *Litws) Run() {

@@ -13,10 +13,10 @@ const (
 )
 
 type Packet struct {
-	Id PacketId
+	Id PacketId `json:"id"`
 	// TrackingId is used for callbacks or subscriptions.
-	TrackingId string
-	Payload    interface{}
+	TrackingId string      `json:"trackingId"`
+	Payload    interface{} `json:"payload"`
 }
 type packetHandler func(p *Packet, c *Client)
 
